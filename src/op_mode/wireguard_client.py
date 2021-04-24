@@ -28,7 +28,21 @@ from vyos.util import popen
 if os.geteuid() != 0:
     exit("You need to have root privileges to run this script.\nPlease try again, this time using 'sudo'. Exiting.")
 
-tmpl = """
+server_config = """WireGuard client configuration for interface: {{ interface }}
+
+To enable this configuration on a VyOS router you can use the following commands:
+
+=== VyOS (server) configurtation ===
+
+{% for addr in address if address is defined %}
+set interfaces wireguard {{ interface }} peer {{ name }} allowed-ips '{{ addr }}'
+{% endfor %}
+set interfaces wireguard {{ interface }} peer {{ name }} pubkey '{{ pubkey }}'
+"""
+
+client_config = """
+=== RoadWarrior (client) configuration ===
+
 [Interface]
 PrivateKey = {{ privkey }}
 {% if address is defined and address|length > 0 %}
@@ -39,10 +53,12 @@ Address = {{ address | join(', ')}}
 PublicKey = {{ system_pubkey }}
 Endpoint = {{ server }}:{{ port }}
 AllowedIPs = 0.0.0.0/0, ::/0
+
 """
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--name", type=str, help='WireGuard peer name', required=True)
     parser.add_argument("-i", "--interface", type=str, help='WireGuard interface the client is connecting to', required=True)
     parser.add_argument("-s", "--server", type=str, help='WireGuard server IPv4/IPv6 address or FQDN', required=True)
     parser.add_argument("-a", "--address", type=str, help='WireGuard client IPv4/IPv6 address', action='append')
@@ -58,6 +74,8 @@ if __name__ == '__main__':
     pubkey,_ = popen('wg pubkey', input=privkey)
 
     config = {
+        'name' : args.name,
+        'interface' : args.interface,
         'system_pubkey' : wg_pubkey,
         'privkey': privkey,
         'pubkey' : pubkey,
@@ -83,10 +101,11 @@ if __name__ == '__main__':
         if (v4_addr > 1) or (v6_addr > 1):
             exit('Client can only have one IPv4 and one IPv6 address.')
 
-    tmp = Template(tmpl, trim_blocks=True).render(config)
-    qrcode,err = popen('qrencode -t ansiutf8', input=tmp)
-
-    print(f'\nWireGuard client configuration for interface: {interface}')
-    print(tmp)
-    print('\n')
+    # Clear out terminal first
+    print('\x1b[2J\x1b[H')
+    server = Template(server_config, trim_blocks=True).render(config)
+    print(server)
+    client = Template(client_config, trim_blocks=True).render(config)
+    print(client)
+    qrcode,err = popen('qrencode -t ansiutf8', input=client)
     print(qrcode)
